@@ -32,13 +32,20 @@ Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
     Body = "Hello $name!"
 })
 ```
+
 Make sure the trigger is set to only accept GET requests
 
 Test if you can call the function (hint: check the "Get function URL" option) with a tool like PowerShell or Postman.
 
 Test if you can add a query parameter to the url called "Name" and give this a value, check if your output changes.
 
-## Exercise 3 - Connect the function to API Management ()
+---
+
+### STOP - Explanation
+
+---
+
+## Exercise 3 - Connect the function to API Management (15 min)
 
 In the azure function look for the API Management blade and link your API. Keep the API suffix empty.
 
@@ -49,179 +56,135 @@ Test if your API Management is working, first use the test tab for the operation
 Now change the name of the operation to "Hello" and test if it's still working. This will give a 404 error as API management will try to go to the "Hello" function in our app. Change the created backend in API management with the Runtime URL like:
 `https://<yourfunctionname>.azurewebsites.net/api//HttpTrigger1`
 
->! Spoiler test
+You now need to make sure the "Hello" part is stripped from the url before it goes to the back-end. Add an API Management policy to do this. You can check answer 1 in the ANSWERS.md file to see how to do this.
 
-## Step 2 - Hello World
+Test that your API is working without a query parameter and with one (called Name).
 
-Create a **http trigger** function in the Function App and put the authentication level on **Anonymous**.
-Replace the code of the function with the following code:
+## Exercise 4 - Adding Policy Fragments (10 min)
 
-```Powershell
+Create a policy fragment which holds the policies to call the function. Name it "call-function". Replace the existing policy in Hello with the policy fragement. You can check answer 2 if you are stuck.
 
-using namespace System.Net
+Test again if your API still works with and without a query parameters.
 
-# Input bindings are passed in via param block.
-param($Request, $TriggerMetadata)
+---
 
-# Get the name from the Query
-$name = $Request.Query.Name ?? "World"
+### STOP - Explanation
 
-# Associate values to output bindings by calling 'Push-OutputBinding'.
-Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
-    StatusCode = [HttpStatusCode]::OK
-    Body = "Hello $name!"
-})
-```
+---
 
-Get the Function URL (master).
+## Exercise 5 - Our own API key (30 min)
 
-Test if the function works by calling it with and without a "name" query parameter.
+Open the keyvault in your environment and make sure you have the permission **Key Vault Secrets Officer**. Make sure the API Management managed identity has the permission **Key Vault Secrets User**.
 
-Now go to your API Management Instance and create a HTTP Api. You can name it anything you want.
-Go into the settings of the API and look for the setting **Subscription required** and disable this checkbox.
-Create an operation called "hello".
-Add the azure function URL as a back-end url.
-Add an inbound policy type to rewrite the URL to remove `/hello` from the url.
+Create a secret named "Everyone" and give it the value "12345"
 
-## Step 3 - Frag it
+Now create a new operation in your API Management called "Hello-Restricted".
+Now create a policy which queries your keyvault for a secret named after the value in the Query parameter name (hint: you want to look into "send-request"). The secret value should be send as a header named "Key" to the API management.
 
-Check the inbound policy and copy the inbound policies. This should look something like:
+If the value doesn't exists in the keyvault or the keys don't match make sure a 401 is returned. Else return the output (hint: you want to use a `<choose>` here). If you want to know what is happening in API management you can use the trace button in the test tab to see what's happening internally.
 
-```Api Management Policy
-<rewrite-uri template="/" />
-<set-backend-service base-url="https://YOURFUNCTIONAPP.azurewebsites.net/api/HttpTrigger1" />
-```
+Make sure that the policy to check the keyvault is again put in a policy fragment. Call this policy fragment "check-keyvault". Keep in mind that nested policy fragments are not supported.
 
-Now go to the policy fragments blade in API Management and create a new policy fragments with the content you just copied. Call the fragment "call-function".
-
-Go back to the inbound policy for the operation created in Step 2 and remove the lines which where copied before and replace these with.
-
-```Api Management Policy
-<include-fragment fragment-id="call-function" />
-```
-
-Test to see if the API is still working.
-
-## Step 4 - Hello allowed?
-
-Go to the Keyvault and give yourself **Key Vault Secrets Officer** permissions and give the API Mangement managed identity **Key Vault Secrets User** permissions.
-
-Create a secret with the name of someone or something which is allowed to get a hello (for example your own name). If you want you can create multiple values. As value enter a secret key you can remember (for example 12345).
-Make sure you copy the url for the key-vault as this needs to be used later.
-
-Create another policy-fragment called "check-keyvault" and use this code:
-
-```Api Management Policy
-<fragment>
-    <send-request mode="new" response-variable-name="responseObj" timeout="30" ignore-error="true">
-        <set-url>@($"https://YOURKEYVAULTNAME.vault.azure.net/secrets/{context.Request.Url.Query.GetValueOrDefault("Name","World")}?api-version=7.4")</set-url>
-        <set-method>GET</set-method>
-        <authentication-managed-identity resource="https://vault.azure.net" />
-    </send-request>
-    <choose>
-        <when condition="@(!((IResponse)context.Variables["responseObj"]).Body.As<JObject>(preserveContent: true).ContainsKey("value"))">
-            <return-response>
-                <set-status code="401" reason="Unauthorized" />
-            </return-response>
-        </when>
-        <when condition="@(!((string)((IResponse)context.Variables["responseObj"]).Body.As<JObject>(preserveContent: true)["value"]).Equals((string)context.Request.Headers.GetValueOrDefault("Key","")))">
-            <return-response>
-                <set-status code="401" reason="Unauthorized" />
-            </return-response>
-        </when>
-    </choose>
-</fragment>
-```
-
-Nested fragments aren't possible. If that would be possible the return response could be made into a separate fragment too.
-
-Now create a new operation in the API Management (in the same API as before) called "hello-restricted". And add both fragments in the inbound policy like this:
-
-```Api Management Policy
-<include-fragment fragment-id="check-keyvault" />
-<include-fragment fragment-id="call-function" />
-```
-
-Test the Api by using a query named "Name" where you use the name of the secret you made, and add a header named "Key" where you enter the value of the secret you made. Also see what happens when values are incorrect or missing.
-
-## Step 5 - What's in the name
-
-To make sure the policy fragments can be reused more easily go to named values in API management. Create two **plain** values named "FunctionName" (value is the name of the function) and "KeyVaultName" (value is the name of the keyvault).
-
-Now replace the function and keyvault name in the policy fragment by using `{{Named Value Name}}` and test if the API's still work.
-
-## Step 6 - Authorization
-
-Create a new operation in API Management called "hello-auth". Set the inbound policy to this:
-
-```Api Management Policy
-<validate-jwt header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="Unauthorized" require-expiration-time="true" require-scheme="Bearer" require-signed-tokens="true">
-    <openid-config url="https://login.microsoftonline.com/contoso.onmicrosoft.com/.well-known/openid-configuration" />
-    <audiences>
-        <audience>https://management.core.windows.net/</audience>
-    </audiences>
-    <issuers>
-        <issuer>https://sts.windows.net/289178cb-1f7c-4171-b559-4885bd001c74/</issuer>
-    </issuers>
-</validate-jwt>
-<include-fragment fragment-id="call-function" />
-```
-
-The issuers is set up to a Entra ID App registration in the demo environment. If you want to do this in your own environment you need to create an app registration (no redirect uri required) and create a client secret. Copy the client secret as this is needed later and copy the clientid from the app. This should replace the guid in the issuer uri.
-
-To test it open powershell and log into azure using the following powershell script:
+Test if it works. If you want to use PowerShell you can add the header like this:
 
 ```PowerShell
-$SecurePassword = Read-Host -Prompt 'Enter a Password' -AsSecureString
+Invoke-RestMethod -Uri "https://<NAME OF YOUR APIM>.azure-api.net/Hello-Restricted?Name=Everyone" -Headers @{Key=12345}
+```
+
+Feel free to add more secrets and see if they work too.
+
+You can check answer 3 if you get stuck.
+
+## Exercise 6 - Using Named values (10 min)
+
+Create two named values:
+
+* FunctionName
+* KeyVaultName
+
+Give them the values of your function and keyvault and make sure that in the policy fragment the names for the function and keyvault are replaced by these values. You can use the syntax `{{Named Value Name}}` to add named values to policies.
+
+You can check answer 4 for more info.
+
+---
+
+### STOP - Explanation
+
+---
+
+## Exercise 7 - Adding Entra ID (20 min)
+
+Create a new operation in API Management called "Hello-Auth".
+You can go to Entra ID in the azure portal and check out the App Registrations. There should be one app where you are the owner off (name starts with APIMWORKSHOPAPP). Create a secret for this app and make sure you safe this somewhere.
+
+If you want to login via this app in PowerShell you can use a command like this.
+
+```PowerShell
+$ApplicationId = Read-Host -Prompt 'Enter a the Application ID'
+$SecurePassword = Read-Host -Prompt 'Enter a the Client Secret Value' -AsSecureString
 $TenantId = '289178cb-1f7c-4171-b559-4885bd001c74'
-$ApplicationId = 'c32c9725-fb12-4e01-8ef3-cb7606b4c6d6'
 $Credential = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $ApplicationId, $SecurePassword
 Connect-AzAccount -ServicePrincipal -TenantId $TenantId -Credential $Credential
+$Token = (Get-AzAccessToken).Token
+$Token
 ```
 
-If you are doing this in your own environment replace the tenantID and the ApplicationId.
-When prompted for the password enter the client secret which is provided by the speaker (or you copied it already when doing it in your own environment).
+This will provide you with a token. You can use sites like https://www.jwt.io to analyze a token like this (don't use this for production environment due to security risks).
 
-Now use the command `(Get-AzAccessToken).Token` to get your token.
-Test the api by adding a Authorization header which consists of the word "bearer" followed by a space and then the full token. If succesfull the API should work while if the token isn't provided it should give a 401.
+In the token you will find the value appid and iss. Create a policy to check that these are corresponding with the values you see. So the issues will be "https://sts.windows.net/289178cb-1f7c-4171-b559-4885bd001c74/" and the appid will be your appid (hint: you want to look into validate-jwt). if it fails it should return a 401. The token needs to be send as a authorization header. If you are using PowerShell you can do that like this (assuming your are still in the same window):
 
-## Step 7 - Roles
-
-If you are doing this in your own environment find the app registration you made before and create two app roles names "Admin" and "User", for the value and description you also use these values. Also you'll find the index.html file here. This needs to be hosted somewhere. You can for example host it in and Azure App service or use a tool like XAMPP to host it locally. The address of the place where you are hosting it should now be added as redirect uri for a Single Page App (SPA) in the app registration.
-
-Create a new operation called "hello-role" and use the following code for the inbound policy:
-
-```Api Management Policy
-<validate-jwt header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="Unauthorized" require-expiration-time="true" require-scheme="Bearer" require-signed-tokens="true" output-token-variable-name="jwt">
-    <openid-config url="https://login.microsoftonline.com/contoso.onmicrosoft.com/.well-known/openid-configuration" />
-    <audiences>
-        <audience>c32c9725-fb12-4e01-8ef3-cb7606b4c6d6</audience>
-    </audiences>
-    <issuers>
-        <issuer>https://login.microsoftonline.com/289178cb-1f7c-4171-b559-4885bd001c74/v2.0</issuer>
-    </issuers>
-</validate-jwt>
-<choose>
-    <when condition="@(((Jwt)context.Variables["jwt"]).Claims.GetValueOrDefault("roles").Contains("Admin"))">
-        <set-query-parameter name="Name" exists-action="override">
-            <value>Admin</value>
-        </set-query-parameter>
-        <include-fragment fragment-id="call-function" />
-    </when>
-    <when condition="@(((Jwt)context.Variables["jwt"]).Claims.GetValueOrDefault("roles").Contains("User"))">
-        <set-query-parameter name="Name" exists-action="override">
-            <value>User</value>
-        </set-query-parameter>
-        <include-fragment fragment-id="call-function" />
-    </when>
-</choose>
+```PowerShell
+Invoke-RestMethod -Uri "https://powerupapimapimlevis.azure-api.net/Hello-Auth?" -Headers @{Authorization = "Bearer $Token"}
 ```
 
-Do not that the validate-jwt policy has changed as for this example a different OAuth version will be used. If you are doing this in your own environment make sure to set the application ID and tenant id correct.
-If you are doing this in your own environment assign the Admin role from the app registration (enterprise app) to your user account.
+You can check answer 5 for more help.
 
-Go to the webpage https://powerupapimlogin.azurewebsites.net/ in a private browsing window (or the window where you are logged into the azure portal). If you are doing this in your own environment go to the place where you hosted the index.html.
+---
 
-This page will prompt you with a loginscreen and login via a application in Entra ID. You can click the Login Link and it will show you the UPN you used, the roles you have assigned and the token. Wait untill the speaker has set all users to a specific role and log in (if you did so before make sure you log out first). Get the token and use this to call the API with a **Authorization** header starting with "bearer" followed by a space and then the token.
+### STOP - Explanation
 
-You should now see it say welcome and then the role you have.
+---
+
+## Exercise 8 - Setting up Roles (10 min)
+
+In the app registration you can create app roles. Create the app role (Name and Value are the same in this case):
+
+* Admin
+* User
+
+You can click the link to go to the assignment enterprise application which you also have permissions for. Here you can assign yourself to one of the two roles.
+
+Make sure you create a redirect url for a single web page in the app registation and add the following url:
+`https://powerupapimlogin.azurewebsites.net/`
+
+Now go to https://powerupapimlogin.azurewebsites.net/ and enter your application ID in the first field, then press the login link. This will log you into the app and shows which roles are assigned to you and it shows your token. You can again analyze this token to see where this information is stored in the token. If you are interested in how the app works you can check the App folder in this repository to check the code for it.
+
+## Exercise 9 - Conditional logic per role (20 min)
+
+Create a new operation in API Management again and call it "Hello-Role". For this one we want to do a validation of the token again. So check if the follow attributes are set correctly:
+
+* audiences = Application ID from your app
+* issuer = `https://login.microsoftonline.com/289178cb-1f7c-4171-b559-4885bd001c74/v2.0`
+
+You then want to get the roles from the token (hint: they are under claims in the object).
+And if the Role is Admin it should send the query `Name=Admin` to the function. If the Role is user it should send `Name=You`. In other cases it shouldn't go to the function.
+
+Create the policy for this (hint: you will need to use a `<choose>` again). Test it by passing along the token. The easiest way to test is by using the build in test tab and copying the token to the Authorization header. Make sure you put "Bearer " (the space is intentional) in front of it.
+
+Test if it works with the role you have and assign yourself a different role and check if it works this way too.
+
+You can check answer 6 for more help.
+
+---
+
+### END
+
+---
+
+## Bonus - In case you are very quick
+
+The code can be tidied up more. Thing to consider:
+
+* Creating a named value for the app id and issuer and/or tenant id
+* In the last exercise when no Role is set you can add a proper error
+* Store which response has to be send for which role in he keyvault and retrieve the proper response here.
