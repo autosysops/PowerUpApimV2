@@ -29,7 +29,7 @@
         //Azure AD AppConfig
         const msalConfig = {
             auth: {
-                clientId: 'process.env.CLIENT_ID',
+                clientId: process.env.CLIENT_ID,
                 authority: 'https://login.microsoftonline.com/289178cb-1f7c-4171-b559-4885bd001c74',
                 redirectUri: `${location.origin}`
             },
