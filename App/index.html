@@ -34,23 +34,31 @@
         integrity="sha256-/xUj+3OJU5yExlq6GSYGSHk7tPXikynS7ogEvDej/m4=" crossorigin="anonymous"></script>
     <script>
         //Azure AD AppConfig
-        const msalConfig = {
-            auth: {
-                clientId: $(`#ClientID`).val(),
-                authority: 'https://login.microsoftonline.com/289178cb-1f7c-4171-b559-4885bd001c74',
-                redirectUri: `${location.origin}`
-            },
-            cache: {
-                cacheLocation: "sessionStorage",
-                storeAuthStateInCookie: false
-            }
-        };
+        var msalConfig = {};
 
         //Vars
-        const myMSALObj = new msal.PublicClientApplication(msalConfig);
-        var currentAccount = getCurrentAccount();
+        var myMSALObj = {};
+        var currentAccount = null;
 
         // Login Functions
+        function updateMSALConfig() {
+            //Azure AD AppConfig
+            msalConfig = {
+                auth: {
+                    clientId: $(`#ClientID`).val(),
+                    authority: 'https://login.microsoftonline.com/289178cb-1f7c-4171-b559-4885bd001c74',
+                    redirectUri: `${location.origin}`
+                },
+                cache: {
+                    cacheLocation: "sessionStorage",
+                    storeAuthStateInCookie: false
+                }
+            };
+
+            //Vars
+            myMSALObj = new msal.PublicClientApplication(msalConfig);
+        }
+
         async function getUserToken() {
             var userToken = null;
             const UserSession = getUserSession();
@@ -146,6 +154,8 @@
 
         //Main Functions
         async function login() {
+            updateMSALConfig();
+
             if (currentAccount == null) {
                 await signinUser();
             }
@@ -155,6 +165,8 @@
         }
 
         async function logout() {
+            updateMSALConfig();
+
             // Extract login hint to use as logout hint
             const logoutHint = currentAccount.username;
             await myMSALObj.logoutPopup({ logoutHint: logoutHint });
