@@ -8,6 +8,13 @@
 <body id="top">
 
     <h1>Login</h1>
+    <br>
+    Client ID:
+    <br>
+    <form id="Base64Form" action="#" method="post">
+        <input type="text" name="ClientID" id="ClientID" value="111111-111111-111111-1111" required>
+    </form>
+    <br>
     <a href="#" onclick="login()">Click here to log in</a>
     <br>
     <br>
@@ -29,7 +36,7 @@
         //Azure AD AppConfig
         const msalConfig = {
             auth: {
-                clientId: process.env.CLIENT_ID,
+                clientId: $(`#ClientID`).val(),
                 authority: 'https://login.microsoftonline.com/289178cb-1f7c-4171-b559-4885bd001c74',
                 redirectUri: `${location.origin}`
             },
